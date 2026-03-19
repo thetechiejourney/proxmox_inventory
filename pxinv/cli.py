@@ -1,10 +1,11 @@
 import warnings
+
 warnings.filterwarnings("ignore", category=UserWarning, module="urllib3")
 
-import click
-from .client import ProxmoxClient
-from .output import print_table, print_summary
-from .config import load_config
+import click  # noqa: E402
+from .client import ProxmoxClient  # noqa: E402
+from .output import print_table, print_summary  # noqa: E402
+from .config import load_config  # noqa: E402
 
 
 @click.group()
