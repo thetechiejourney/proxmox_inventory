@@ -1,16 +1,62 @@
 from proxmoxer import ProxmoxAPI
+from proxmoxer.backends.https import AuthenticationError
+from requests.exceptions import ConnectionError, SSLError
+
+
+class PxinvConnectionError(Exception):
+    pass
+
+
+class PxinvAuthError(Exception):
+    pass
+
+
+class PxinvNotFoundError(Exception):
+    pass
+
+
+def _wrap_api_call(func):
+    """Decorator that converts proxmoxer/requests exceptions into clean pxinv errors."""
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except AuthenticationError:
+            raise PxinvAuthError(
+                "Authentication failed. Check your token name and token value."
+            )
+        except SSLError:
+            raise PxinvConnectionError(
+                "SSL verification failed. Use --no-verify-ssl if your Proxmox uses a self-signed certificate."
+            )
+        except ConnectionError as e:
+            if "No route to host" in str(e) or "refused" in str(e).lower():
+                raise PxinvConnectionError(
+                    "Cannot connect to Proxmox. Check that the host is reachable and port 8006 is open."
+                )
+            raise PxinvConnectionError(f"Connection error: {e}")
+    return wrapper
 
 
 class ProxmoxClient:
     def __init__(self, host, user, token_name, token_value, verify_ssl=True):
-        self._px = ProxmoxAPI(
-            host,
-            user=user,
-            token_name=token_name,
-            token_value=token_value,
-            verify_ssl=verify_ssl,
-        )
+        try:
+            self._px = ProxmoxAPI(
+                host,
+                user=user,
+                token_name=token_name,
+                token_value=token_value,
+                verify_ssl=verify_ssl,
+            )
+        except SSLError:
+            raise PxinvConnectionError(
+                "SSL verification failed. Use --no-verify-ssl if your Proxmox uses a self-signed certificate."
+            )
+        except ConnectionError as e:
+            raise PxinvConnectionError(
+                f"Cannot connect to {host}:8006 — {e}"
+            )
 
+    @_wrap_api_call
     def get_nodes(self):
         """Return list of nodes with basic stats."""
         nodes = []
@@ -27,6 +73,7 @@ class ProxmoxClient:
             )
         return nodes
 
+    @_wrap_api_call
     def get_vm(self, vmid):
         """Find a VM/CT by VMID and return its node and type."""
         for item in self._px.cluster.resources.get(type="vm"):
@@ -40,11 +87,12 @@ class ProxmoxClient:
                 }
         return None
 
+    @_wrap_api_call
     def start_vm(self, vmid):
         """Start a VM or container."""
         vm = self.get_vm(vmid)
         if not vm:
-            raise ValueError(f"VMID {vmid} not found")
+            raise PxinvNotFoundError(f"VMID {vmid} not found")
         if vm["status"] == "running":
             raise ValueError(f"{vm['name']} is already running")
         node = self._px.nodes(vm["node"])
@@ -52,11 +100,12 @@ class ProxmoxClient:
             return node.qemu(vmid).status.start.post(), vm
         return node.lxc(vmid).status.start.post(), vm
 
+    @_wrap_api_call
     def stop_vm(self, vmid):
         """Gracefully shutdown a VM or container."""
         vm = self.get_vm(vmid)
         if not vm:
-            raise ValueError(f"VMID {vmid} not found")
+            raise PxinvNotFoundError(f"VMID {vmid} not found")
         if vm["status"] == "stopped":
             raise ValueError(f"{vm['name']} is already stopped")
         node = self._px.nodes(vm["node"])
@@ -64,11 +113,13 @@ class ProxmoxClient:
             return node.qemu(vmid).status.shutdown.post(), vm
         return node.lxc(vmid).status.shutdown.post(), vm
 
+    @_wrap_api_call
     def get_vm_status(self, vmid):
         """Return current status of a VM/CT."""
         vm = self.get_vm(vmid)
         return vm["status"] if vm else None
 
+    @_wrap_api_call
     def get_resources(self, node=None, vm_type=None, status=None):
         """Return VMs and containers, optionally filtered."""
         resources = []

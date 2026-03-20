@@ -227,3 +227,42 @@ def test_stop_sends_task(mock_cls):
     assert result.exit_code == 0
     assert "homeassistant" in result.output
     mock_client.stop_vm.assert_called_once_with(100)
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_connection_error_shows_clean_message(mock_cls):
+    from pxinv.client import PxinvConnectionError
+    mock_cls.side_effect = PxinvConnectionError(
+        "Cannot connect to Proxmox. Check that the host is reachable and port 8006 is open."
+    )
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["list"])
+    assert result.exit_code != 0
+    assert "Cannot connect" in result.output
+    assert "Traceback" not in result.output
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_auth_error_shows_clean_message(mock_cls):
+    from pxinv.client import PxinvAuthError
+    mock_cls.side_effect = PxinvAuthError(
+        "Authentication failed. Check your token name and token value."
+    )
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["list"])
+    assert result.exit_code != 0
+    assert "Authentication failed" in result.output
+    assert "Traceback" not in result.output
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_vmid_not_found_shows_clean_message(mock_cls):
+    from pxinv.client import PxinvNotFoundError
+    mock_client = MagicMock()
+    mock_client.start_vm.side_effect = PxinvNotFoundError("VMID 999 not found")
+    mock_cls.return_value = mock_client
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["start", "999"])
+    assert result.exit_code != 0
+    assert "999" in result.output
+    assert "Traceback" not in result.output

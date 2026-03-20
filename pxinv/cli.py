@@ -6,7 +6,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="urllib3")
 import click  # noqa: E402
 from rich.console import Console  # noqa: E402
 
-from .client import ProxmoxClient  # noqa: E402
+from .client import ProxmoxClient, PxinvAuthError, PxinvConnectionError, PxinvNotFoundError  # noqa: E402
 from .config import load_config  # noqa: E402
 from .output import print_summary, print_table  # noqa: E402
 
@@ -46,13 +46,23 @@ def _get_client(ctx):
             f"Missing required config: {', '.join(missing)}. "
             "Use CLI flags, env vars (PXINV_*), or a config file."
         )
-    return ProxmoxClient(
-        host=obj["host"],
-        user=obj["user"],
-        token_name=obj["token_name"],
-        token_value=obj["token_value"],
-        verify_ssl=obj["verify_ssl"],
-    )
+    try:
+        return ProxmoxClient(
+            host=obj["host"],
+            user=obj["user"],
+            token_name=obj["token_name"],
+            token_value=obj["token_value"],
+            verify_ssl=obj["verify_ssl"],
+        )
+    except (PxinvConnectionError, PxinvAuthError) as e:
+        raise click.ClickException(str(e))
+
+
+def _catch(exc):
+    """Re-raise pxinv domain errors as clean ClickExceptions."""
+    if isinstance(exc, (PxinvConnectionError, PxinvAuthError, PxinvNotFoundError)):
+        raise click.ClickException(str(exc))
+    raise exc
 
 
 def _wait_for_status(client, vmid, target_status, timeout):
@@ -73,31 +83,28 @@ def _wait_for_status(client, vmid, target_status, timeout):
 @cli.command()
 @click.option("--node", default=None, help="Filter by node name")
 @click.option(
-    "--type",
-    "vm_type",
-    default=None,
+    "--type", "vm_type", default=None,
     type=click.Choice(["vm", "ct"]),
     help="Filter by type: vm or ct",
 )
 @click.option(
-    "--status",
-    default=None,
+    "--status", default=None,
     type=click.Choice(["running", "stopped", "paused"]),
     help="Filter by status",
 )
 @click.option(
-    "--output",
-    "-o",
-    default="table",
+    "--output", "-o", default="table",
     type=click.Choice(["table", "json", "yaml"]),
-    show_default=True,
-    help="Output format",
+    show_default=True, help="Output format",
 )
 @click.pass_context
 def list(ctx, node, vm_type, status, output):
     """List all VMs and containers."""
-    client = _get_client(ctx)
-    resources = client.get_resources(node=node, vm_type=vm_type, status=status)
+    try:
+        client = _get_client(ctx)
+        resources = client.get_resources(node=node, vm_type=vm_type, status=status)
+    except (PxinvConnectionError, PxinvAuthError, PxinvNotFoundError) as e:
+        _catch(e)
 
     if output == "table":
         print_table(resources)
@@ -111,18 +118,19 @@ def list(ctx, node, vm_type, status, output):
 
 @cli.command()
 @click.option(
-    "--output",
-    "-o",
-    default="table",
+    "--output", "-o", default="table",
     type=click.Choice(["table", "json", "yaml"]),
     show_default=True,
 )
 @click.pass_context
 def summary(ctx, output):
     """Show cluster resource summary."""
-    client = _get_client(ctx)
-    resources = client.get_resources()
-    nodes = client.get_nodes()
+    try:
+        client = _get_client(ctx)
+        resources = client.get_resources()
+        nodes = client.get_nodes()
+    except (PxinvConnectionError, PxinvAuthError) as e:
+        _catch(e)
 
     if output == "table":
         print_summary(resources, nodes)
@@ -150,8 +158,10 @@ def start(ctx, vmid, wait, timeout):
             click.echo(f"{vm['name']} is running.")
         else:
             click.echo("Task sent. Use 'pxinv list' to check status.")
-    except ValueError as e:
-        raise click.ClickException(str(e))
+    except (PxinvConnectionError, PxinvAuthError, PxinvNotFoundError, ValueError) as e:
+        if isinstance(e, ValueError):
+            raise click.ClickException(str(e))
+        _catch(e)
 
 
 @cli.command()
@@ -170,8 +180,10 @@ def stop(ctx, vmid, wait, timeout):
             click.echo(f"{vm['name']} is stopped.")
         else:
             click.echo("Task sent. Use 'pxinv list' to check status.")
-    except ValueError as e:
-        raise click.ClickException(str(e))
+    except (PxinvConnectionError, PxinvAuthError, PxinvNotFoundError, ValueError) as e:
+        if isinstance(e, ValueError):
+            raise click.ClickException(str(e))
+        _catch(e)
 
 
 def main():
