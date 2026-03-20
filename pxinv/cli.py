@@ -1,11 +1,14 @@
+import time
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning, module="urllib3")
 
 import click  # noqa: E402
+from rich.console import Console  # noqa: E402
+
 from .client import ProxmoxClient  # noqa: E402
-from .output import print_table, print_summary  # noqa: E402
 from .config import load_config  # noqa: E402
+from .output import print_summary, print_table  # noqa: E402
 
 
 @click.group()
@@ -33,6 +36,38 @@ def cli(ctx, host, user, token_name, token_value, config_path, verify_ssl):
         raise click.UsageError(
             "Proxmox host is required. Use --host, PXINV_HOST env var, or config file."
         )
+
+
+def _get_client(ctx):
+    obj = ctx.obj
+    missing = [k for k in ("host", "token_name", "token_value") if not obj.get(k)]
+    if missing:
+        raise click.UsageError(
+            f"Missing required config: {', '.join(missing)}. "
+            "Use CLI flags, env vars (PXINV_*), or a config file."
+        )
+    return ProxmoxClient(
+        host=obj["host"],
+        user=obj["user"],
+        token_name=obj["token_name"],
+        token_value=obj["token_value"],
+        verify_ssl=obj["verify_ssl"],
+    )
+
+
+def _wait_for_status(client, vmid, target_status, timeout):
+    """Poll until VM reaches target_status or timeout."""
+    console = Console()
+    deadline = time.time() + timeout
+    with console.status(f"Waiting for {target_status}..."):
+        while time.time() < deadline:
+            current = client.get_vm_status(vmid)
+            if current == target_status:
+                return
+            time.sleep(2)
+    raise click.ClickException(
+        f"Timeout after {timeout}s — last status: {client.get_vm_status(vmid)}"
+    )
 
 
 @cli.command()
@@ -99,21 +134,44 @@ def summary(ctx, output):
         click.echo(yaml.dump({"resources": resources, "nodes": nodes}, default_flow_style=False))
 
 
-def _get_client(ctx):
-    obj = ctx.obj
-    missing = [k for k in ("host", "token_name", "token_value") if not obj.get(k)]
-    if missing:
-        raise click.UsageError(
-            f"Missing required config: {', '.join(missing)}. "
-            "Use CLI flags, env vars (PXINV_*), or a config file."
-        )
-    return ProxmoxClient(
-        host=obj["host"],
-        user=obj["user"],
-        token_name=obj["token_name"],
-        token_value=obj["token_value"],
-        verify_ssl=obj["verify_ssl"],
-    )
+@cli.command()
+@click.argument("vmid", type=int)
+@click.option("--wait", is_flag=True, default=False, help="Wait until VM is running")
+@click.option("--timeout", default=60, show_default=True, help="Timeout in seconds when using --wait")
+@click.pass_context
+def start(ctx, vmid, wait, timeout):
+    """Start a VM or container by VMID."""
+    client = _get_client(ctx)
+    try:
+        _, vm = client.start_vm(vmid)
+        click.echo(f"Starting {vm['name']} ({vmid})...")
+        if wait:
+            _wait_for_status(client, vmid, "running", timeout)
+            click.echo(f"{vm['name']} is running.")
+        else:
+            click.echo("Task sent. Use 'pxinv list' to check status.")
+    except ValueError as e:
+        raise click.ClickException(str(e))
+
+
+@cli.command()
+@click.argument("vmid", type=int)
+@click.option("--wait", is_flag=True, default=False, help="Wait until VM is stopped")
+@click.option("--timeout", default=60, show_default=True, help="Timeout in seconds when using --wait")
+@click.pass_context
+def stop(ctx, vmid, wait, timeout):
+    """Gracefully shut down a VM or container by VMID."""
+    client = _get_client(ctx)
+    try:
+        _, vm = client.stop_vm(vmid)
+        click.echo(f"Stopping {vm['name']} ({vmid})...")
+        if wait:
+            _wait_for_status(client, vmid, "stopped", timeout)
+            click.echo(f"{vm['name']} is stopped.")
+        else:
+            click.echo("Task sent. Use 'pxinv list' to check status.")
+    except ValueError as e:
+        raise click.ClickException(str(e))
 
 
 def main():

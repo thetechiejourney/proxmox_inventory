@@ -27,6 +27,48 @@ class ProxmoxClient:
             )
         return nodes
 
+    def get_vm(self, vmid):
+        """Find a VM/CT by VMID and return its node and type."""
+        for item in self._px.cluster.resources.get(type="vm"):
+            if item.get("vmid") == vmid:
+                return {
+                    "vmid": vmid,
+                    "node": item["node"],
+                    "type": "qemu" if item["type"] == "qemu" else "lxc",
+                    "status": item["status"],
+                    "name": item.get("name", f"vm-{vmid}"),
+                }
+        return None
+
+    def start_vm(self, vmid):
+        """Start a VM or container."""
+        vm = self.get_vm(vmid)
+        if not vm:
+            raise ValueError(f"VMID {vmid} not found")
+        if vm["status"] == "running":
+            raise ValueError(f"{vm['name']} is already running")
+        node = self._px.nodes(vm["node"])
+        if vm["type"] == "qemu":
+            return node.qemu(vmid).status.start.post(), vm
+        return node.lxc(vmid).status.start.post(), vm
+
+    def stop_vm(self, vmid):
+        """Gracefully shutdown a VM or container."""
+        vm = self.get_vm(vmid)
+        if not vm:
+            raise ValueError(f"VMID {vmid} not found")
+        if vm["status"] == "stopped":
+            raise ValueError(f"{vm['name']} is already stopped")
+        node = self._px.nodes(vm["node"])
+        if vm["type"] == "qemu":
+            return node.qemu(vmid).status.shutdown.post(), vm
+        return node.lxc(vmid).status.shutdown.post(), vm
+
+    def get_vm_status(self, vmid):
+        """Return current status of a VM/CT."""
+        vm = self.get_vm(vmid)
+        return vm["status"] if vm else None
+
     def get_resources(self, node=None, vm_type=None, status=None):
         """Return VMs and containers, optionally filtered."""
         resources = []
@@ -59,4 +101,4 @@ class ProxmoxClient:
                 }
             )
 
-        return sorted(resources, key=lambda r: r["vmid"])
+        return sorted(resources, key=lambda r: (r["node"], r["name"]))
