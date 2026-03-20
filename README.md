@@ -97,9 +97,28 @@ pxinv list --tags homelab --status running
 # JSON output (pipe to jq, etc.)
 pxinv list --output json | jq '.[] | select(.cpu_usage > 50)'
 
-# YAML or CSV output
+# YAML output
 pxinv list --output yaml
 ```
+
+### `pxinv watch`
+
+Live-refresh the VM/container list directly in the terminal. No flickering — powered by `rich.Live`. Press `Ctrl+C` to exit.
+
+```bash
+# Refresh every 5 seconds (default)
+pxinv watch
+
+# Custom interval
+pxinv watch --interval 10
+
+# Combinable with all list filters
+pxinv watch --status running
+pxinv watch --tags k8s --interval 3
+pxinv watch --node pve-01
+```
+
+The panel header shows the refresh interval and the timestamp of the last update.
 
 ### `pxinv summary`
 

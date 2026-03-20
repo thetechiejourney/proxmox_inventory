@@ -320,3 +320,18 @@ def test_list_filter_by_tag_no_match(mock_cls):
     import json
     parsed = json.loads(result.output)
     assert len(parsed) == 0
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_watch_exits_on_keyboard_interrupt(mock_cls):
+    from unittest.mock import patch as mpatch
+    mock_client = MagicMock()
+    mock_client.get_resources.return_value = MOCK_RESOURCES
+    mock_cls.return_value = mock_client
+
+    with mpatch("pxinv.cli.time") as mock_time:
+        mock_time.sleep.side_effect = KeyboardInterrupt
+        runner = _make_runner()
+        result = runner.invoke(cli, BASE_ARGS + ["watch", "--interval", "1"])
+
+    assert result.exit_code == 0

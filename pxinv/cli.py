@@ -8,7 +8,7 @@ from rich.console import Console  # noqa: E402
 
 from .client import ProxmoxClient, PxinvAuthError, PxinvConnectionError, PxinvNotFoundError  # noqa: E402
 from .config import load_config  # noqa: E402
-from .output import print_summary, print_table  # noqa: E402
+from .output import print_summary, print_table, build_watch_panel  # noqa: E402
 
 
 @click.group()
@@ -147,6 +147,50 @@ def summary(ctx, output):
     elif output == "yaml":
         import yaml
         click.echo(yaml.dump({"resources": resources, "nodes": nodes}, default_flow_style=False))
+
+
+@cli.command()
+@click.option("--interval", "-i", default=5, show_default=True, help="Refresh interval in seconds")
+@click.option("--node", default=None, help="Filter by node name")
+@click.option(
+    "--type", "vm_type", default=None,
+    type=click.Choice(["vm", "ct"]),
+    help="Filter by type: vm or ct",
+)
+@click.option(
+    "--status", default=None,
+    type=click.Choice(["running", "stopped", "paused"]),
+    help="Filter by status",
+)
+@click.option("--tags", default=None, help="Filter by tag")
+@click.pass_context
+def watch(ctx, interval, node, vm_type, status, tags):
+    """Live-refresh the VM/container list. Press Ctrl+C to exit."""
+    from rich.live import Live
+    client = _get_client(ctx)
+
+    def fetch():
+        try:
+            resources = client.get_resources(node=node, vm_type=vm_type, status=status)
+            if tags:
+                resources = [
+                    r for r in resources
+                    if tags.lower() in [t.strip().lower() for t in r.get("tags", "").split(";") if t.strip()]
+                ]
+            return resources
+        except (PxinvConnectionError, PxinvAuthError) as e:
+            raise click.ClickException(str(e))
+
+    resources = fetch()
+    try:
+        with Live(build_watch_panel(resources, interval), refresh_per_second=1, screen=True) as live:
+            while True:
+                time.sleep(interval)
+                resources = fetch()
+                live.update(build_watch_panel(resources, interval))
+    except KeyboardInterrupt:
+        pass
+
 
 
 @cli.command()
