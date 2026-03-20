@@ -266,3 +266,57 @@ def test_vmid_not_found_shows_clean_message(mock_cls):
     assert result.exit_code != 0
     assert "999" in result.output
     assert "Traceback" not in result.output
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_list_tags_column_present(mock_cls):
+    mock_client = MagicMock()
+    resources_with_tags = MOCK_RESOURCES.copy()
+    resources_with_tags[0] = {**MOCK_RESOURCES[0], "tags": "homelab;k8s"}
+    mock_client.get_resources.return_value = resources_with_tags
+    mock_cls.return_value = mock_client
+
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["list", "--output", "json"])
+
+    assert result.exit_code == 0
+    import json
+    parsed = json.loads(result.output)
+    assert parsed[0]["tags"] == "homelab;k8s"
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_list_filter_by_tag(mock_cls):
+    mock_client = MagicMock()
+    mock_client.get_resources.return_value = [
+        {**MOCK_RESOURCES[0], "tags": "homelab;k8s"},
+        {**MOCK_RESOURCES[1], "tags": "dns"},
+        {**MOCK_RESOURCES[2], "tags": ""},
+    ]
+    mock_cls.return_value = mock_client
+
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["list", "--output", "json", "--tags", "homelab"])
+
+    assert result.exit_code == 0
+    import json
+    parsed = json.loads(result.output)
+    assert len(parsed) == 1
+    assert parsed[0]["tags"] == "homelab;k8s"
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_list_filter_by_tag_no_match(mock_cls):
+    mock_client = MagicMock()
+    mock_client.get_resources.return_value = [
+        {**MOCK_RESOURCES[0], "tags": "homelab"},
+    ]
+    mock_cls.return_value = mock_client
+
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["list", "--output", "json", "--tags", "production"])
+
+    assert result.exit_code == 0
+    import json
+    parsed = json.loads(result.output)
+    assert len(parsed) == 0
