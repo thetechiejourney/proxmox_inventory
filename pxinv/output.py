@@ -1,6 +1,10 @@
-from rich.console import Console
-from rich.table import Table
+from datetime import datetime
+
 from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 console = Console()
 
@@ -43,11 +47,8 @@ def _type_style(t):
     return "[cyan]VM[/cyan]" if t == "vm" else "[magenta]CT[/magenta]"
 
 
-def print_table(resources):
-    if not resources:
-        console.print("[yellow]No resources found.[/yellow]")
-        return
-
+def build_table(resources):
+    """Build and return a Rich Table from a list of resources."""
     table = Table(box=box.SIMPLE_HEAD, show_header=True, header_style="bold")
     table.add_column("VMID", style="dim", width=6)
     table.add_column("NAME", min_width=20)
@@ -79,16 +80,45 @@ def print_table(resources):
             tags,
         )
 
-    console.print(table)
-    console.print(
-        f"[dim]{len(resources)} resource(s) — "
-        f"{sum(1 for r in resources if r['status'] == 'running')} running, "
-        f"{sum(1 for r in resources if r['status'] == 'stopped')} stopped[/dim]"
+    return table
+
+
+def build_footer(resources):
+    """Return a footer Text with running/stopped counts."""
+    running = sum(1 for r in resources if r["status"] == "running")
+    stopped = sum(1 for r in resources if r["status"] == "stopped")
+    return Text(
+        f"{len(resources)} resource(s) — {running} running, {stopped} stopped",
+        style="dim",
+    )
+
+
+def print_table(resources):
+    if not resources:
+        console.print("[yellow]No resources found.[/yellow]")
+        return
+    console.print(build_table(resources))
+    console.print(build_footer(resources))
+
+
+def build_watch_panel(resources, interval):
+    """Build a Panel containing the table + footer for use with rich.Live."""
+    if not resources:
+        content = Text("No resources found.", style="yellow")
+    else:
+        from rich.console import Group
+        content = Group(build_table(resources), build_footer(resources))
+
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    return Panel(
+        content,
+        title="[bold]pxinv watch[/bold]",
+        subtitle=f"[dim]refreshing every {interval}s — last update {timestamp} — press Ctrl+C to exit[/dim]",
+        border_style="dim",
     )
 
 
 def print_summary(resources, nodes):
-    # Node summary table
     node_table = Table(
         title="Nodes", box=box.SIMPLE_HEAD, show_header=True, header_style="bold"
     )
@@ -110,7 +140,6 @@ def print_summary(resources, nodes):
 
     console.print(node_table)
 
-    # Totals
     total = len(resources)
     running = sum(1 for r in resources if r["status"] == "running")
     stopped = sum(1 for r in resources if r["status"] == "stopped")
