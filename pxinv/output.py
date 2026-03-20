@@ -58,11 +58,13 @@ def print_table(resources):
     table.add_column("RAM", justify="right", width=14)
     table.add_column("DISK", justify="right", width=14)
     table.add_column("UPTIME", justify="right", width=10)
+    table.add_column("TAGS", style="dim")
 
     for r in resources:
         mem = f"{_fmt_bytes(r['mem_used'])}/{_fmt_bytes(r['mem_total'])}"
         disk = f"{_fmt_bytes(r['disk_used'])}/{_fmt_bytes(r['disk_total'])}"
         cpu = f"{r['cpu_usage']}%" if r["status"] == "running" else "—"
+        tags = r.get("tags", "").replace(";", " ") if r.get("tags") else ""
 
         table.add_row(
             str(r["vmid"]),
@@ -74,6 +76,7 @@ def print_table(resources):
             mem,
             disk,
             _fmt_uptime(r["uptime"]),
+            tags,
         )
 
     console.print(table)

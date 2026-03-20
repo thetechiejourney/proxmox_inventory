@@ -97,14 +97,21 @@ def _wait_for_status(client, vmid, target_status, timeout):
     type=click.Choice(["table", "json", "yaml"]),
     show_default=True, help="Output format",
 )
+@click.option("--tags", default=None, help="Filter by tag (e.g. --tags homelab)")
 @click.pass_context
-def list(ctx, node, vm_type, status, output):
+def list(ctx, node, vm_type, status, output, tags):
     """List all VMs and containers."""
     try:
         client = _get_client(ctx)
         resources = client.get_resources(node=node, vm_type=vm_type, status=status)
     except (PxinvConnectionError, PxinvAuthError, PxinvNotFoundError) as e:
         _catch(e)
+
+    if tags:
+        resources = [
+            r for r in resources
+            if tags.lower() in [t.strip().lower() for t in r.get("tags", "").split(";") if t.strip()]
+        ]
 
     if output == "table":
         print_table(resources)
