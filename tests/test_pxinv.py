@@ -173,3 +173,57 @@ def test_list_missing_host():
     runner = _make_runner()
     result = runner.invoke(cli, ["--token-name", "t", "--token-value", "v", "list"])
     assert result.exit_code != 0
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_start_running_vm(mock_cls):
+    mock_client = MagicMock()
+    mock_client.start_vm.side_effect = ValueError("homeassistant is already running")
+    mock_cls.return_value = mock_client
+
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["start", "100"])
+
+    assert result.exit_code != 0
+    assert "already running" in result.output
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_start_sends_task(mock_cls):
+    mock_client = MagicMock()
+    mock_client.start_vm.return_value = ("task-id-123", {"name": "talos-cp-01", "vmid": 200})
+    mock_cls.return_value = mock_client
+
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["start", "200"])
+
+    assert result.exit_code == 0
+    assert "talos-cp-01" in result.output
+    mock_client.start_vm.assert_called_once_with(200)
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_stop_stopped_vm(mock_cls):
+    mock_client = MagicMock()
+    mock_client.stop_vm.side_effect = ValueError("talos-cp-01 is already stopped")
+    mock_cls.return_value = mock_client
+
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["stop", "200"])
+
+    assert result.exit_code != 0
+    assert "already stopped" in result.output
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_stop_sends_task(mock_cls):
+    mock_client = MagicMock()
+    mock_client.stop_vm.return_value = ("task-id-456", {"name": "homeassistant", "vmid": 100})
+    mock_cls.return_value = mock_client
+
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["stop", "100"])
+
+    assert result.exit_code == 0
+    assert "homeassistant" in result.output
+    mock_client.stop_vm.assert_called_once_with(100)
