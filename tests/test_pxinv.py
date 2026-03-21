@@ -335,3 +335,87 @@ def test_watch_exits_on_keyboard_interrupt(mock_cls):
         result = runner.invoke(cli, BASE_ARGS + ["watch", "--interval", "1"])
 
     assert result.exit_code == 0
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_ansible_inventory_structure(mock_cls):
+    import json
+    mock_client = MagicMock()
+    mock_client.get_resources.return_value = [
+        {**MOCK_RESOURCES[0], "tags": "homelab;k8s"},
+        {**MOCK_RESOURCES[1], "tags": "dns"},
+        {**MOCK_RESOURCES[2], "tags": ""},
+    ]
+    mock_cls.return_value = mock_client
+
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["ansible-inventory"])
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+
+    # Required keys
+    assert "all" in data
+    assert "_meta" in data
+    assert "hostvars" in data["_meta"]
+
+    # All hosts present
+    assert "homeassistant" in data["all"]["hosts"]
+    assert "pihole" in data["all"]["hosts"]
+    assert "talos-cp-01" in data["all"]["hosts"]
+
+    # Status groups
+    assert "running" in data
+    assert "stopped" in data
+    assert "homeassistant" in data["running"]["hosts"]
+    assert "talos-cp-01" in data["stopped"]["hosts"]
+
+    # Tag groups
+    assert "tag_homelab" in data
+    assert "tag_k8s" in data
+    assert "tag_dns" in data
+    assert "homeassistant" in data["tag_homelab"]["hosts"]
+    assert "homeassistant" in data["tag_k8s"]["hosts"]
+    assert "pihole" in data["tag_dns"]["hosts"]
+
+    # Hostvars
+    hv = data["_meta"]["hostvars"]["homeassistant"]
+    assert hv["proxmox_vmid"] == 100
+    assert hv["proxmox_node"] == "pve-01"
+    assert hv["proxmox_type"] == "vm"
+    assert hv["proxmox_status"] == "running"
+    assert "homelab" in hv["proxmox_tags"]
+    assert "k8s" in hv["proxmox_tags"]
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_ansible_inventory_with_ips(mock_cls):
+    import json
+    mock_client = MagicMock()
+    mock_client.get_resources.return_value = [MOCK_RESOURCES[0]]
+    mock_client.get_vm_ip.return_value = "192.168.1.100"
+    mock_cls.return_value = mock_client
+
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["ansible-inventory", "--with-ips"])
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    hv = data["_meta"]["hostvars"]["homeassistant"]
+    assert hv["ansible_host"] == "192.168.1.100"
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_ansible_inventory_running_only(mock_cls):
+    import json
+    mock_client = MagicMock()
+    mock_client.get_resources.return_value = [MOCK_RESOURCES[0]]
+    mock_cls.return_value = mock_client
+
+    runner = _make_runner()
+    result = runner.invoke(cli, BASE_ARGS + ["ansible-inventory", "--running-only"])
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert len(data["all"]["hosts"]) == 1
+    mock_client.get_resources.assert_called_once_with(status="running")

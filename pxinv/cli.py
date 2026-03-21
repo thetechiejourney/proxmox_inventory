@@ -239,3 +239,70 @@ def stop(ctx, vmid, wait, timeout):
 
 def main():
     cli()
+
+
+@cli.command("ansible-inventory")
+@click.option("--with-ips", is_flag=True, default=False,
+              help="Fetch IPs via QEMU guest agent (requires qemu-guest-agent installed in VMs)")
+@click.option("--running-only", is_flag=True, default=False,
+              help="Only include running VMs and containers")
+@click.pass_context
+def ansible_inventory(ctx, with_ips, running_only):
+    """Export inventory in Ansible dynamic inventory JSON format."""
+    import json
+
+    client = _get_client(ctx)
+    try:
+        status_filter = "running" if running_only else None
+        resources = client.get_resources(status=status_filter)
+    except (PxinvConnectionError, PxinvAuthError) as e:
+        _catch(e)
+
+    hostvars = {}
+    groups = {"all": {"hosts": [], "children": []}, "_meta": {"hostvars": {}}}
+
+    # Group by status and by tag
+    status_groups = {}
+    tag_groups = {}
+
+    for r in resources:
+        hostname = r["name"]
+        groups["all"]["hosts"].append(hostname)
+
+        # Build hostvars
+        hvars = {
+            "proxmox_vmid": r["vmid"],
+            "proxmox_node": r["node"],
+            "proxmox_type": r["type"],
+            "proxmox_status": r["status"],
+            "proxmox_tags": [t.strip() for t in r.get("tags", "").split(";") if t.strip()],
+        }
+
+        if with_ips and r["status"] == "running":
+            ip = client.get_vm_ip(r["vmid"], r["node"], r["type"])
+            if ip:
+                hvars["ansible_host"] = ip
+
+        hostvars[hostname] = hvars
+
+        # Group by status
+        s = r["status"]
+        status_groups.setdefault(s, []).append(hostname)
+
+        # Group by tag
+        for tag in hvars["proxmox_tags"]:
+            tag_groups.setdefault(tag, []).append(hostname)
+
+    # Build final structure
+    for s, hosts in status_groups.items():
+        groups[s] = {"hosts": hosts}
+        groups["all"]["children"].append(s)
+
+    for tag, hosts in tag_groups.items():
+        groups[f"tag_{tag}"] = {"hosts": hosts}
+        groups["all"]["children"].append(f"tag_{tag}")
+
+    groups["_meta"]["hostvars"] = hostvars
+    groups["all"]["children"] = sorted(set(groups["all"]["children"]))
+
+    click.echo(json.dumps(groups, indent=2))

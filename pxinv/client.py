@@ -153,3 +153,23 @@ class ProxmoxClient:
             )
 
         return sorted(resources, key=lambda r: (r["node"], r["name"]))
+
+    @_wrap_api_call
+    def get_vm_ip(self, vmid, node, vm_type):
+        """Try to get the primary IP of a running VM via QEMU guest agent.
+        Returns None if the agent is not available or the VM is stopped.
+        Only works for VMs (qemu), not containers (lxc).
+        """
+        if vm_type != "vm":
+            return None
+        try:
+            ifaces = self._px.nodes(node).qemu(vmid).agent("network-get-interfaces").get()
+            for iface in ifaces.get("result", []):
+                if iface.get("name") == "lo":
+                    continue
+                for addr in iface.get("ip-addresses", []):
+                    if addr.get("ip-address-type") == "ipv4":
+                        return addr["ip-address"]
+        except Exception:
+            return None
+        return None
