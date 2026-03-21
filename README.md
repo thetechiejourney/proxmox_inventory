@@ -5,6 +5,8 @@
 
 A fast CLI for inventorying and managing VMs and containers on your Proxmox homelab.
 
+![pxinv demo](assets/demo.gif)
+
 ```
 $ pxinv list
 
