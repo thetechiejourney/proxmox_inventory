@@ -1,8 +1,6 @@
 # pxinv
 
-[![CI](https://github.com/yourusername/pxinv/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/pxinv/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/pxinv)](https://pypi.org/project/pxinv/)
-[![Python](https://img.shields.io/pypi/pyversions/pxinv)](https://pypi.org/project/pxinv/)
+[![CI](https://github.com/thetechiejourney/pxinv/actions/workflows/ci.yml/badge.svg)](https://github.com/thetechiejourney/pxinv/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A fast CLI for inventorying and managing VMs and containers on your Proxmox homelab.
@@ -28,7 +26,7 @@ pip install pxinv
 Or install from source:
 
 ```bash
-git clone https://github.com/yourusername/pxinv
+git clone https://github.com/thetechiejourney/pxinv
 cd pxinv
 pip install -e .
 ```
@@ -154,6 +152,57 @@ pxinv stop 100
 pxinv stop 100 --wait
 ```
 
+### `pxinv ansible-inventory`
+
+Export the inventory in Ansible dynamic inventory JSON format. Hosts are automatically grouped by status (`running`, `stopped`) and by Proxmox tag (`tag_homelab`, `tag_k8s`, etc.).
+
+```bash
+# Basic inventory (no IPs)
+pxinv ansible-inventory
+
+# Fetch IPs via QEMU guest agent (requires qemu-guest-agent installed in VMs)
+pxinv ansible-inventory --with-ips
+
+# Only include running guests
+pxinv ansible-inventory --running-only
+
+# Use directly with ansible
+ansible -i <(pxinv ansible-inventory) all -m ping
+
+# Target a specific group
+ansible -i <(pxinv ansible-inventory) tag_homelab -m ping
+ansible -i <(pxinv ansible-inventory) running -m setup
+```
+
+Example output:
+
+```json
+{
+  "all": {
+    "hosts": ["homeassistant", "pihole"],
+    "children": ["running", "stopped", "tag_homelab", "tag_dns"]
+  },
+  "running": { "hosts": ["homeassistant", "pihole"] },
+  "stopped": { "hosts": [] },
+  "tag_homelab": { "hosts": ["homeassistant"] },
+  "tag_dns": { "hosts": ["pihole"] },
+  "_meta": {
+    "hostvars": {
+      "homeassistant": {
+        "ansible_host": "192.168.1.100",
+        "proxmox_vmid": 100,
+        "proxmox_node": "pve-01",
+        "proxmox_type": "vm",
+        "proxmox_status": "running",
+        "proxmox_tags": ["homelab"]
+      }
+    }
+  }
+}
+```
+
+> `ansible_host` is only populated when using `--with-ips` and the VM has `qemu-guest-agent` running.
+
 ## Tags
 
 Proxmox supports tagging VMs and containers via the UI (VM → Options → Tags). `pxinv` shows tags as a column in `pxinv list` and lets you filter by them:
@@ -180,7 +229,7 @@ export PXINV_VERIFY_SSL=false
 PRs welcome. To set up a dev environment:
 
 ```bash
-git clone https://github.com/yourusername/pxinv
+git clone https://github.com/thetechiejourney/pxinv
 cd pxinv
 python3 -m venv .venv
 source .venv/bin/activate
