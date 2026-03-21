@@ -12,7 +12,7 @@ from .output import print_summary, print_table, build_watch_panel  # noqa: E402
 
 
 @click.group()
-@click.version_option(version="0.1.0")
+@click.version_option(package_name="pxinv")
 @click.option("--host", envvar="PXINV_HOST", help="Proxmox host (e.g. 192.168.1.10)")
 @click.option("--user", envvar="PXINV_USER", default="root@pam", show_default=True)
 @click.option("--token-name", envvar="PXINV_TOKEN_NAME", help="API token name")
