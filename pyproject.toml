@@ -34,8 +34,8 @@ dependencies = [
 pxinv = "pxinv.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/pxinv"
-Issues = "https://github.com/yourusername/pxinv/issues"
+Homepage = "https://github.com/thetechiejourney/pxinv"
+Issues = "https://github.com/thetechiejourney/pxinv/issues"
 
 [project.optional-dependencies]
 dev = [

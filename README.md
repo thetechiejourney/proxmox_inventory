@@ -1,8 +1,4 @@
 # pxinv
-
-[![CI](https://github.com/thetechiejourney/pxinv/actions/workflows/ci.yml/badge.svg)](https://github.com/thetechiejourney/pxinv/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
 A fast CLI for inventorying and managing VMs and containers on your Proxmox homelab.
 
 ![pxinv demo](assets/demo.gif)
@@ -65,7 +61,7 @@ pxinv list
 
 ### 3. Config file
 
-`~/.config/pxinv/config.yaml`:
+Single host — `~/.config/pxinv/config.yaml`:
 ```yaml
 host: 192.168.1.10
 user: root@pam
@@ -74,23 +70,47 @@ token_value: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 verify_ssl: false
 ```
 
+Multiple clusters — `~/.config/pxinv/config.yaml`:
+```yaml
+clusters:
+  home:
+    host: 192.168.1.10
+    user: root@pam
+    token_name: pxinv
+    token_value: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    verify_ssl: false
+
+  vps:
+    host: 95.216.x.x
+    token_name: pxinv
+    token_value: yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
+    verify_ssl: true
+```
+
 ## Commands
+
+### `pxinv clusters`
+
+List all configured clusters.
+
+```bash
+pxinv clusters
+```
 
 ### `pxinv list`
 
 List all VMs and containers.
 
 ```bash
-# All guests
+# All guests across all clusters
 pxinv list
 
-# Filter by node
+# Only a specific cluster
+pxinv --cluster home list
+
+# Filter by node, type, status or tag
 pxinv list --node pve-01
-
-# Only running containers
 pxinv list --type ct --status running
-
-# Filter by tag
 pxinv list --tags k8s
 pxinv list --tags homelab --status running
 
@@ -100,6 +120,8 @@ pxinv list --output json | jq '.[] | select(.cpu_usage > 50)'
 # YAML output
 pxinv list --output yaml
 ```
+
+When multiple clusters are configured, a `CLUSTER` column appears automatically.
 
 ### `pxinv watch`
 
@@ -112,10 +134,9 @@ pxinv watch
 # Custom interval
 pxinv watch --interval 10
 
-# Combinable with all list filters
-pxinv watch --status running
+# Combinable with all list filters and --cluster
+pxinv --cluster home watch --status running
 pxinv watch --tags k8s --interval 3
-pxinv watch --node pve-01
 ```
 
 The panel header shows the refresh interval and the timestamp of the last update.
@@ -126,7 +147,7 @@ Show cluster-wide resource totals and node status.
 
 ```bash
 pxinv summary
-pxinv summary --output json
+pxinv --cluster vps summary --output json
 ```
 
 ### `pxinv start <vmid>`
@@ -156,7 +177,7 @@ pxinv stop 100 --wait
 
 ### `pxinv ansible-inventory`
 
-Export the inventory in Ansible dynamic inventory JSON format. Hosts are automatically grouped by status (`running`, `stopped`) and by Proxmox tag (`tag_homelab`, `tag_k8s`, etc.).
+Export the inventory in Ansible dynamic inventory JSON format. Hosts are automatically grouped by status (`running`, `stopped`), by Proxmox tag (`tag_homelab`, `tag_k8s`, etc.) and by cluster (`cluster_home`, `cluster_vps`, etc.).
 
 ```bash
 # Basic inventory (no IPs)
@@ -173,6 +194,7 @@ ansible -i <(pxinv ansible-inventory) all -m ping
 
 # Target a specific group
 ansible -i <(pxinv ansible-inventory) tag_homelab -m ping
+ansible -i <(pxinv ansible-inventory) cluster_home -m ping
 ansible -i <(pxinv ansible-inventory) running -m setup
 ```
 
@@ -182,10 +204,10 @@ Example output:
 {
   "all": {
     "hosts": ["homeassistant", "pihole"],
-    "children": ["running", "stopped", "tag_homelab", "tag_dns"]
+    "children": ["running", "stopped", "cluster_home", "tag_homelab", "tag_dns"]
   },
   "running": { "hosts": ["homeassistant", "pihole"] },
-  "stopped": { "hosts": [] },
+  "cluster_home": { "hosts": ["homeassistant", "pihole"] },
   "tag_homelab": { "hosts": ["homeassistant"] },
   "tag_dns": { "hosts": ["pihole"] },
   "_meta": {
@@ -196,6 +218,7 @@ Example output:
         "proxmox_node": "pve-01",
         "proxmox_type": "vm",
         "proxmox_status": "running",
+        "proxmox_cluster": "home",
         "proxmox_tags": ["homelab"]
       }
     }
@@ -238,7 +261,3 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 pytest
 ```
-
-## License
-
-MIT

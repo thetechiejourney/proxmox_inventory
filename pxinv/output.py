@@ -47,9 +47,11 @@ def _type_style(t):
     return "[cyan]VM[/cyan]" if t == "vm" else "[magenta]CT[/magenta]"
 
 
-def build_table(resources):
+def build_table(resources, show_cluster=False):
     """Build and return a Rich Table from a list of resources."""
     table = Table(box=box.SIMPLE_HEAD, show_header=True, header_style="bold")
+    if show_cluster:
+        table.add_column("CLUSTER", style="dim")
     table.add_column("VMID", style="dim", width=6)
     table.add_column("NAME", min_width=20)
     table.add_column("NODE", style="dim")
@@ -66,8 +68,10 @@ def build_table(resources):
         disk = f"{_fmt_bytes(r['disk_used'])}/{_fmt_bytes(r['disk_total'])}"
         cpu = f"{r['cpu_usage']}%" if r["status"] == "running" else "—"
         tags = r.get("tags", "").replace(";", " ") if r.get("tags") else ""
-
-        table.add_row(
+        row = []
+        if show_cluster:
+            row.append(r.get("cluster", ""))
+        row.extend([
             str(r["vmid"]),
             r["name"],
             r["node"],
@@ -78,7 +82,8 @@ def build_table(resources):
             disk,
             _fmt_uptime(r["uptime"]),
             tags,
-        )
+        ])
+        table.add_row(*row)
 
     return table
 
@@ -93,21 +98,21 @@ def build_footer(resources):
     )
 
 
-def print_table(resources):
+def print_table(resources, show_cluster=False):
     if not resources:
         console.print("[yellow]No resources found.[/yellow]")
         return
-    console.print(build_table(resources))
+    console.print(build_table(resources, show_cluster=show_cluster))
     console.print(build_footer(resources))
 
 
-def build_watch_panel(resources, interval):
+def build_watch_panel(resources, interval, show_cluster=False):
     """Build a Panel containing the table + footer for use with rich.Live."""
     if not resources:
         content = Text("No resources found.", style="yellow")
     else:
         from rich.console import Group
-        content = Group(build_table(resources), build_footer(resources))
+        content = Group(build_table(resources, show_cluster=show_cluster), build_footer(resources))
 
     timestamp = datetime.now().strftime("%H:%M:%S")
     return Panel(
