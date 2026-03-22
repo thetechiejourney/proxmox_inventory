@@ -332,6 +332,115 @@ def restart(ctx, vmid, wait, timeout):
 
 
 
+@cli.group()
+def snapshot():
+    """Manage VM and container snapshots."""
+    pass
+
+
+@snapshot.command("create")
+@click.argument("vmid", type=int)
+@click.argument("name")
+@click.option("--description", "-d", default="", help="Snapshot description")
+@click.option("--include-ram", is_flag=True, default=False,
+              help="Include RAM state (VMs only, requires VM to be running)")
+@click.pass_context
+def snapshot_create(ctx, vmid, name, description, include_ram):
+    """Create a snapshot of a VM or container.
+
+    Example: pxinv snapshot create 400 before-update -d "Before OS upgrade"
+    """
+    client = _get_clients(ctx)[0][1]
+    try:
+        console = Console()
+        with console.status(f"Creating snapshot '{name}'..."):
+            _, vm = client.create_snapshot(vmid, name, description=description, include_ram=include_ram)
+        click.echo(f"Snapshot '{name}' created for {vm['name']} ({vmid}).")
+    except (PxinvConnectionError, PxinvAuthError, PxinvNotFoundError, ValueError) as e:
+        if isinstance(e, ValueError):
+            raise click.ClickException(str(e))
+        _catch(e)
+
+
+@snapshot.command("delete")
+@click.argument("vmid", type=int)
+@click.argument("name")
+@click.option("--yes", "-y", is_flag=True, default=False, help="Skip confirmation prompt")
+@click.pass_context
+def snapshot_delete(ctx, vmid, name, yes):
+    """Delete a snapshot of a VM or container.
+
+    Example: pxinv snapshot delete 400 before-update
+    """
+    client = _get_clients(ctx)[0][1]
+    if not yes:
+        click.confirm(f"Delete snapshot '{name}' from VMID {vmid}?", abort=True)
+    try:
+        _, vm = client.delete_snapshot(vmid, name)
+        click.echo(f"Snapshot '{name}' deleted from {vm['name']} ({vmid}).")
+    except (PxinvConnectionError, PxinvAuthError, PxinvNotFoundError, ValueError) as e:
+        if isinstance(e, ValueError):
+            raise click.ClickException(str(e))
+        _catch(e)
+
+
+@cli.command()
+@click.argument("vmid", type=int)
+@click.option(
+    "--output", "-o", default="table",
+    type=click.Choice(["table", "json", "yaml"]),
+    show_default=True,
+)
+@click.pass_context
+def snapshots(ctx, vmid, output):
+    """List snapshots of a VM or container.
+
+    Example: pxinv snapshots 400
+    """
+    from datetime import datetime
+    from rich.table import Table
+    from rich import box
+    from rich.console import Console as RichConsole
+
+    client = _get_clients(ctx)[0][1]
+    try:
+        vm = client.get_vm(vmid)
+        if not vm:
+            raise click.ClickException(f"VMID {vmid} not found")
+        snap_list = client.get_snapshots(vmid, vm["node"], vm["type"])
+    except (PxinvConnectionError, PxinvAuthError, PxinvNotFoundError) as e:
+        _catch(e)
+
+    if output == "json":
+        import json
+        click.echo(json.dumps(snap_list, indent=2))
+        return
+    if output == "yaml":
+        import yaml
+        click.echo(yaml.dump(snap_list, default_flow_style=False))
+        return
+
+    console = RichConsole()
+    if not snap_list:
+        console.print(f"[yellow]No snapshots found for VMID {vmid}.[/yellow]")
+        return
+
+    table = Table(box=box.SIMPLE_HEAD, show_header=True, header_style="bold")
+    table.add_column("NAME")
+    table.add_column("DATE", style="dim")
+    table.add_column("RAM", width=5)
+    table.add_column("DESCRIPTION", style="dim")
+
+    for s in sorted(snap_list, key=lambda x: x["snaptime"], reverse=True):
+        date = datetime.fromtimestamp(s["snaptime"]).strftime("%Y-%m-%d %H:%M") if s["snaptime"] else "—"
+        ram = "[green]yes[/green]" if s.get("vmstate") else "no"
+        table.add_row(s["name"], date, ram, s.get("description", ""))
+
+    console.print(table)
+    console.print(f"[dim]{len(snap_list)} snapshot(s) for {vm['name']} ({vmid})[/dim]")
+
+
+
 @cli.command("ansible-inventory")
 @click.option("--with-ips", is_flag=True, default=False,
               help="Fetch IPs via QEMU guest agent (requires qemu-guest-agent installed in VMs)")
