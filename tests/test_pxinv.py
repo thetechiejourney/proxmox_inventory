@@ -390,3 +390,73 @@ def test_restart_not_found(mock_cls):
     assert result.exit_code != 0
     assert "999" in result.output
     assert "Traceback" not in result.output
+
+
+# ── snapshots ─────────────────────────────────────────────────────────────────
+
+MOCK_SNAPSHOTS = [
+    {"name": "before-update", "description": "Before OS upgrade", "snaptime": 1700000000, "vmstate": 0},
+    {"name": "clean-install", "description": "Clean install",     "snaptime": 1699000000, "vmstate": 1},
+]
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_snapshots_list_table(mock_cls):
+    mock_client = MagicMock()
+    mock_client.get_vm.return_value = {"vmid": 100, "node": "pve-01", "type": "vm", "name": "homeassistant", "status": "running"}
+    mock_client.get_snapshots.return_value = MOCK_SNAPSHOTS
+    mock_cls.return_value = mock_client
+
+    result = _make_runner().invoke(cli, BASE_ARGS + ["snapshots", "100"])
+    assert result.exit_code == 0
+    assert "before-update" in result.output
+    assert "clean-install" in result.output
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_snapshots_list_json(mock_cls):
+    import json
+    mock_client = MagicMock()
+    mock_client.get_vm.return_value = {"vmid": 100, "node": "pve-01", "type": "vm", "name": "homeassistant", "status": "running"}
+    mock_client.get_snapshots.return_value = MOCK_SNAPSHOTS
+    mock_cls.return_value = mock_client
+
+    result = _make_runner().invoke(cli, BASE_ARGS + ["snapshots", "100", "--output", "json"])
+    assert result.exit_code == 0
+    assert len(json.loads(result.output)) == 2
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_snapshots_empty(mock_cls):
+    mock_client = MagicMock()
+    mock_client.get_vm.return_value = {"vmid": 100, "node": "pve-01", "type": "vm", "name": "homeassistant", "status": "running"}
+    mock_client.get_snapshots.return_value = []
+    mock_cls.return_value = mock_client
+
+    result = _make_runner().invoke(cli, BASE_ARGS + ["snapshots", "100"])
+    assert result.exit_code == 0
+    assert "No snapshots" in result.output
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_snapshot_create(mock_cls):
+    mock_client = MagicMock()
+    mock_client.create_snapshot.return_value = ("task-id", {"name": "homeassistant", "vmid": 100})
+    mock_cls.return_value = mock_client
+
+    result = _make_runner().invoke(cli, BASE_ARGS + ["snapshot", "create", "100", "before-update", "-d", "Before upgrade"])
+    assert result.exit_code == 0
+    assert "before-update" in result.output
+    mock_client.create_snapshot.assert_called_once_with(100, "before-update", description="Before upgrade", include_ram=False)
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_snapshot_delete_with_yes_flag(mock_cls):
+    mock_client = MagicMock()
+    mock_client.delete_snapshot.return_value = ("task-id", {"name": "homeassistant", "vmid": 100})
+    mock_cls.return_value = mock_client
+
+    result = _make_runner().invoke(cli, BASE_ARGS + ["snapshot", "delete", "100", "before-update", "--yes"])
+    assert result.exit_code == 0
+    assert "before-update" in result.output
+    mock_client.delete_snapshot.assert_called_once_with(100, "before-update")

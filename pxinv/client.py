@@ -56,6 +56,19 @@ class ProxmoxClient:
                 f"Cannot connect to {host}:8006 — {e}"
             )
 
+    def _wait_task(self, node, task_id, timeout=60):
+        """Poll a Proxmox task until it finishes. Raises ValueError if it fails."""
+        import time
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            status = self._px.nodes(node).tasks(task_id).status.get()
+            if status.get("status") == "stopped":
+                if status.get("exitstatus") == "OK":
+                    return
+                raise ValueError(status.get("exitstatus", "Task failed"))
+            time.sleep(1)
+        raise ValueError(f"Task timed out after {timeout}s")
+
     @_wrap_api_call
     def get_nodes(self):
         """Return list of nodes with basic stats."""
@@ -186,3 +199,53 @@ class ProxmoxClient:
         if vm["type"] == "qemu":
             return node.qemu(vmid).status.reboot.post(), vm
         return node.lxc(vmid).status.reboot.post(), vm
+
+    @_wrap_api_call
+    def get_snapshots(self, vmid, node, vm_type):
+        """Return list of snapshots for a VM or container."""
+        node_api = self._px.nodes(node)
+        if vm_type == "qemu":
+            snaps = node_api.qemu(vmid).snapshot.get()
+        else:
+            snaps = node_api.lxc(vmid).snapshot.get()
+        return [
+            {
+                "name": s["name"],
+                "description": s.get("description", ""),
+                "snaptime": s.get("snaptime", 0),
+                "vmstate": s.get("vmstate", 0),
+            }
+            for s in snaps
+            if s["name"] != "current"
+        ]
+
+    @_wrap_api_call
+    def create_snapshot(self, vmid, name, description="", include_ram=False):
+        """Create a snapshot of a VM or container. Waits for the task to complete."""
+        vm = self.get_vm(vmid)
+        if not vm:
+            raise PxinvNotFoundError(f"VMID {vmid} not found")
+        node_api = self._px.nodes(vm["node"])
+        params = {"snapname": name, "description": description}
+        if include_ram and vm["type"] == "qemu":
+            params["vmstate"] = 1
+        if vm["type"] == "qemu":
+            task_id = node_api.qemu(vmid).snapshot.post(**params)
+        else:
+            task_id = node_api.lxc(vmid).snapshot.post(**params)
+        self._wait_task(vm["node"], task_id)
+        return task_id, vm
+
+    @_wrap_api_call
+    def delete_snapshot(self, vmid, name):
+        """Delete a snapshot of a VM or container. Waits for the task to complete."""
+        vm = self.get_vm(vmid)
+        if not vm:
+            raise PxinvNotFoundError(f"VMID {vmid} not found")
+        node_api = self._px.nodes(vm["node"])
+        if vm["type"] == "qemu":
+            task_id = node_api.qemu(vmid).snapshot(name).delete()
+        else:
+            task_id = node_api.lxc(vmid).snapshot(name).delete()
+        self._wait_task(vm["node"], task_id)
+        return task_id, vm
