@@ -6,7 +6,7 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: write  # needed to create GitHub Release
+  contents: write
 
 jobs:
   release:
@@ -15,6 +15,23 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "version=$TAG" >> $GITHUB_OUTPUT
+          echo "Building version: $TAG"
+
+      - name: Update version in pyproject.toml
+        run: |
+          sed -i "s/^version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/" pyproject.toml
+          grep "^version" pyproject.toml
+
+      - name: Update version in __init__.py
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"${{ steps.version.outputs.version }}\"/" pxinv/__init__.py
+          grep "__version__" pxinv/__init__.py
 
       - name: Set up Python
         uses: actions/setup-python@v5
