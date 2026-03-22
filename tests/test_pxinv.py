@@ -352,3 +352,41 @@ def test_list_shows_cluster_column_when_multiple(mock_cls):
     assert "home" in clusters
     assert "vps" in clusters
     assert len(clusters) == 2
+
+
+# ── restart ───────────────────────────────────────────────────────────────────
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_restart_sends_task(mock_cls):
+    mock_client = MagicMock()
+    mock_client.restart_vm.return_value = ("task-id-789", {"name": "homeassistant", "vmid": 100})
+    mock_cls.return_value = mock_client
+
+    result = _make_runner().invoke(cli, BASE_ARGS + ["restart", "100"])
+    assert result.exit_code == 0
+    assert "homeassistant" in result.output
+    mock_client.restart_vm.assert_called_once_with(100)
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_restart_stopped_vm(mock_cls):
+    mock_client = MagicMock()
+    mock_client.restart_vm.side_effect = ValueError("talos-cp-01 is stopped — use 'pxinv start' instead")
+    mock_cls.return_value = mock_client
+
+    result = _make_runner().invoke(cli, BASE_ARGS + ["restart", "200"])
+    assert result.exit_code != 0
+    assert "stopped" in result.output
+
+
+@patch("pxinv.cli.ProxmoxClient")
+def test_restart_not_found(mock_cls):
+    from pxinv.client import PxinvNotFoundError
+    mock_client = MagicMock()
+    mock_client.restart_vm.side_effect = PxinvNotFoundError("VMID 999 not found")
+    mock_cls.return_value = mock_client
+
+    result = _make_runner().invoke(cli, BASE_ARGS + ["restart", "999"])
+    assert result.exit_code != 0
+    assert "999" in result.output
+    assert "Traceback" not in result.output

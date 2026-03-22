@@ -309,6 +309,29 @@ def stop(ctx, vmid, wait, timeout):
         _catch(e)
 
 
+@cli.command()
+@click.argument("vmid", type=int)
+@click.option("--wait", is_flag=True, default=False, help="Wait until VM is running again")
+@click.option("--timeout", default=120, show_default=True, help="Timeout in seconds when using --wait")
+@click.pass_context
+def restart(ctx, vmid, wait, timeout):
+    """Reboot a VM or container by VMID."""
+    client = _get_clients(ctx)[0][1]
+    try:
+        _, vm = client.restart_vm(vmid)
+        click.echo(f"Restarting {vm['name']} ({vmid})...")
+        if wait:
+            _wait_for_status(client, vmid, "running", timeout)
+            click.echo(f"{vm['name']} is running.")
+        else:
+            click.echo("Task sent. Use 'pxinv list' to check status.")
+    except (PxinvConnectionError, PxinvAuthError, PxinvNotFoundError, ValueError) as e:
+        if isinstance(e, ValueError):
+            raise click.ClickException(str(e))
+        _catch(e)
+
+
+
 @cli.command("ansible-inventory")
 @click.option("--with-ips", is_flag=True, default=False,
               help="Fetch IPs via QEMU guest agent (requires qemu-guest-agent installed in VMs)")

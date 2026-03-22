@@ -173,3 +173,16 @@ class ProxmoxClient:
         except Exception:
             return None
         return None
+
+    @_wrap_api_call
+    def restart_vm(self, vmid):
+        """Gracefully restart a VM or container (shutdown + start)."""
+        vm = self.get_vm(vmid)
+        if not vm:
+            raise PxinvNotFoundError(f"VMID {vmid} not found")
+        if vm["status"] == "stopped":
+            raise ValueError(f"{vm['name']} is stopped — use 'pxinv start' instead")
+        node = self._px.nodes(vm["node"])
+        if vm["type"] == "qemu":
+            return node.qemu(vmid).status.reboot.post(), vm
+        return node.lxc(vmid).status.reboot.post(), vm
